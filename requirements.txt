@@ -1,0 +1,7 @@
+pyqt6
+numpy
+opencv-python
+rawpy
+pillow
+graphviz
+matplotlib
