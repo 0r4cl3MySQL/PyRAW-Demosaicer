@@ -8,7 +8,6 @@ from utils.image_convert import to_qimage, save_image
 from ui.image_view import ImageView
 from ui.histogram import Histogram
 
-
 class MainWindow(QMainWindow):
     def __init__(self, ctx):
         super().__init__()
