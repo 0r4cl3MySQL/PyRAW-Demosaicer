@@ -75,7 +75,6 @@ class MainWindow(QMainWindow):
 
     def next_stage(self):
         self.stage = (self.stage + 1) % 6
-        print("STAGE:", self.stage)
         self.update_pipeline()
 
     def set_demosaic(self, mode):
@@ -119,14 +118,6 @@ class MainWindow(QMainWindow):
 
         if self.stage >= 3:
             rgb = demosaic(self.ctx, self.ctx.bayer, self.demosaic_mode)
-            print(
-                "[DEMOSAIC]",
-                rgb.shape,
-                rgb.dtype,
-                "min=", rgb.min(),
-                "max=", rgb.max(),
-                "contig=", rgb.flags["C_CONTIGUOUS"]
-            )
 
         else:
             rgb = normalize(b)

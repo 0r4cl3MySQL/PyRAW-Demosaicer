@@ -22,13 +22,10 @@ def apply_wb(bayer, wb, pattern):
 
 def demosaic_bilinear(bayer, pattern):
 
-    print("in demosaic_bilinear", flush=True)
-
     pattern = np.asarray(pattern, dtype=int)
     pattern[pattern == 3] = 1  # normalize G2 → G
 
     pat = tuple(map(tuple, pattern))
-    print("Normalized pattern:", pat, flush=True)
 
     code_map = {
         ((0,1),(1,2)): cv2.COLOR_BAYER_RG2RGB,
@@ -51,9 +48,6 @@ def demosaic_bilinear(bayer, pattern):
     rgb = cv2.cvtColor(b, code_map[pat])
     return rgb.astype(np.float32)
 
-
-
-
 def demosaic_libraw(raw):
     rgb = raw.postprocess(
         demosaic_algorithm=rawpy.DemosaicAlgorithm.AHD,
@@ -69,8 +63,6 @@ def demosaic_libraw(raw):
     rgb = np.ascontiguousarray(rgb)
 
     return rgb
-
-
 
 def normalize(img):
     img = img - img.min()
