@@ -45,8 +45,9 @@ def demosaic_bilinear(bayer, pattern):
         np.clip(bayer, 0, 65535).astype(np.uint16, copy=False)
     )
 
-    rgb = cv2.cvtColor(b, code_map[pat])
-    return rgb.astype(np.float32)
+    rgb = cv2.cvtColor(b, code_map[pat]).astype(np.float32)
+    rgb = normalize_rgb(rgb)
+    return rgb
 
 def demosaic_libraw(raw):
     rgb = raw.postprocess(
@@ -70,7 +71,10 @@ def normalize(img):
 
 
 def gamma_encode(img, gamma):
-    return np.clip(img, 0, 1) ** (1 / gamma)
+    if gamma <= 0:
+        return img
+    img = np.clip(img, 0.0, 1.0)
+    return img ** (1.0 / gamma)
 
 def draw_bayer_grid(img, pattern):
     out = img.copy()
@@ -87,6 +91,7 @@ def draw_bayer_grid(img, pattern):
 def demosaic(raw_ctx, bayer, mode):
     if mode == "AHD":
         return demosaic_libraw(raw_ctx.raw)
+
     return demosaic_bilinear(bayer, raw_ctx.pattern)
 
 def dual_gain_view(bayer):
@@ -114,3 +119,21 @@ def dual_gain_curve(bayer, t):
     low = bayer
     high = np.clip(bayer - t, 0, None) * 2.0
     return normalize(low + high)
+
+def normalize_rgb(rgb):
+    out = rgb.copy()
+    for c in range(3):
+        ch = out[..., c]
+        ch = ch - ch.min()
+        m = ch.max()
+        if m > 1e-6:
+            ch /= m
+        out[..., c] = ch
+    return out
+
+def apply_wb_rgb(rgb, wb):
+    out = rgb.copy()
+    out[..., 0] *= wb[0]  # R
+    out[..., 1] *= wb[1]  # G
+    out[..., 2] *= wb[2]  # B
+    return out

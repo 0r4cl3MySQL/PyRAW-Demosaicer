@@ -33,6 +33,9 @@ class MainWindow(QMainWindow):
         self.gamma_slider.setRange(10, 40)
         self.gamma_slider.setValue(22)
         self.gamma_slider.valueChanged.connect(self.update_pipeline)
+        # Start disabled (stage < 5)
+        self.gamma_slider.setEnabled(False)
+
 
         self.bayer_cb = QCheckBox("Bayer overlay")
         self.bayer_cb.stateChanged.connect(self.toggle_bayer)
@@ -103,30 +106,42 @@ class MainWindow(QMainWindow):
         self.stage_label.setText(
             f"Stage {self.stage}: {STAGE_NAMES[self.stage]}"
         )
+        # Enable gamma only when it actually does something
+        self.gamma_slider.setEnabled(self.stage >= 5)
 
         b = self.ctx.bayer
 
         if self.stage >= 1:
             b = subtract_black(b, self.ctx.black, self.ctx.pattern)
 
+        # --- White Balance stage ---
         if self.stage >= 2:
-            b = apply_wb(b, self.ctx.wb, self.ctx.pattern)
+            if self.demosaic_mode == "AHD":
+                # WB in Bayer space
+                b = apply_wb(b, self.ctx.wb, self.ctx.pattern)
+            # Bilinear WB will be applied later in RGB
 
         if self.show_dual_gain:
             b = dual_gain_view(b)
 
         if self.stage >= 3:
-            rgb = demosaic(self.ctx, self.ctx.bayer, self.demosaic_mode)
+            rgb = demosaic(self.ctx, b, self.demosaic_mode)
 
         else:
             rgb = normalize(b)
+
+        # Apply WB in RGB for bilinear demosaic
+        if self.stage >= 2 and self.demosaic_mode != "AHD" and rgb.ndim == 3:
+            rgb = apply_wb_rgb(rgb, self.ctx.wb)
+
+#TODO Fix WB Issue
 
         if self.stage >= 4:
             rgb = normalize(rgb)
 
         if self.stage >= 5:
-            self.gamma = self.gamma_slider.value() / 10.0
-            rgb = gamma_encode(rgb, self.gamma)
+            gamma = self.gamma_slider.value() / 10.0
+            rgb = gamma_encode(rgb, gamma)
 
         rgb = normalize(rgb)
 
