@@ -15,7 +15,6 @@ class MainWindow(QMainWindow):
         self.ctx = ctx
         self.stage = 0
         self.gamma = 2.2
-        self.demosaic_mode = "Bilinear"
         self.show_bayer = False
         self.show_dual_gain = False
         self.image = None
@@ -43,20 +42,17 @@ class MainWindow(QMainWindow):
         self.dual_cb = QCheckBox("Dual-gain view")
         self.dual_cb.stateChanged.connect(self.toggle_dual)
 
-        self.demosaic_combo = QComboBox()
-        self.demosaic_combo.addItems(["Bilinear", "AHD"])
-        self.demosaic_combo.currentTextChanged.connect(self.set_demosaic)
-
         self.save_btn = QPushButton("Save stage")
         self.save_btn.clicked.connect(self.save_stage)
 
         self.stage_label = QLabel()
 
+        self.demosaic_mode = "AHD"
+
         controls = QHBoxLayout()
         controls.addWidget(self.stage_btn)
         controls.addWidget(QLabel("Gamma"))
         controls.addWidget(self.gamma_slider)
-        controls.addWidget(self.demosaic_combo)
         controls.addWidget(self.bayer_cb)
         controls.addWidget(self.dual_cb)
         controls.addWidget(self.save_btn)
@@ -79,10 +75,6 @@ class MainWindow(QMainWindow):
         self.stage = (self.stage + 1) % 6
         self.update_pipeline()
 
-    def set_demosaic(self, mode):
-        self.demosaic_mode = mode
-        self.update_pipeline()
-
     def toggle_bayer(self, s):
         self.show_bayer = s > 0
         self.update_pipeline()
@@ -97,7 +89,7 @@ class MainWindow(QMainWindow):
         STAGE_NAMES = [
             "Raw Bayer",
             "Black level subtracted",
-            "White balance applied",
+            "White balance enabled",
             "Demosaiced",
             "Normalized",
             "Gamma corrected",
@@ -106,51 +98,48 @@ class MainWindow(QMainWindow):
         self.stage_label.setText(
             f"Stage {self.stage}: {STAGE_NAMES[self.stage]}"
         )
-        # Enable gamma only when it actually does something
+
         self.gamma_slider.setEnabled(self.stage >= 5)
 
-        b = self.ctx.bayer
+        # --- RAW DOMAIN ---
+        bayer = self.ctx.bayer.astype(float)
 
         if self.stage >= 1:
-            b = subtract_black(b, self.ctx.black, self.ctx.pattern)
+            bayer = subtract_black(bayer, self.ctx.black, self.ctx.pattern)
 
-        # --- White Balance stage ---
+        # WHITE BALANCE IN RAW DOMAIN
         if self.stage >= 2:
-            if self.demosaic_mode == "AHD":
-                # WB in Bayer space
-                b = apply_wb(b, self.ctx.wb, self.ctx.pattern)
-            # Bilinear WB will be applied later in RGB
+            bayer = apply_wb(bayer, self.ctx.wb, self.ctx.pattern)
 
         if self.show_dual_gain:
-            b = dual_gain_view(b)
+            bayer = dual_gain_view(bayer)
 
         if self.stage >= 3:
-            rgb = demosaic(self.ctx, b, self.demosaic_mode)
+            rgb = demosaic(self.ctx, bayer, self.demosaic_mode)
+
+            rgb = np.clip(rgb, 0.0, None)
 
         else:
-            rgb = normalize(b)
+            rgb = normalize(bayer)
 
-        # Apply WB in RGB for bilinear demosaic
-        if self.stage >= 2 and self.demosaic_mode != "AHD" and rgb.ndim == 3:
-            rgb = apply_wb_rgb(rgb, self.ctx.wb)
-
-#TODO Fix WB Issue
-
+        # --- NORMALIZATION (GLOBAL) ---
         if self.stage >= 4:
-            rgb = normalize(rgb)
+            rgb = normalize_exposure(rgb)
 
+        # --- GAMMA ---
         if self.stage >= 5:
             gamma = self.gamma_slider.value() / 10.0
             rgb = gamma_encode(rgb, gamma)
 
-        rgb = normalize(rgb)
+        # --- DISPLAY NORMALIZATION ---
+        rgb = normalize_exposure(rgb)
 
         if self.show_bayer and rgb.ndim == 3:
             rgb = draw_bayer_grid(rgb, self.ctx.pattern)
 
-        self.image = rgb.copy()  # IMPORTANT: own memory
+        self.image = rgb.copy()
         self.view.setImage(to_qimage(self.image))
-        self.hist.update(self.image)  # <-- update histogram
+        self.hist.update(self.image)
 
         self.view.blockSignals(False)
 
