@@ -66,17 +66,30 @@ def normalize(img):
     img = img - img.min()
     return img / max(img.max(), 1e-6)
 
-def draw_bayer_grid(img, pattern):
-    out = img.copy()
-    h, w, _ = out.shape
+def draw_bayer_overlay_raw(bayer, pattern):
+    h, w = bayer.shape
+    rgb = np.zeros((h, w, 3), dtype=np.float32)
 
-    for y in range(0, h, 2):
-        for x in range(0, w, 2):
-            c = pattern[y % 2, x % 2]
-            color = [(1,0,0),(0,1,0),(0,0,1)][c]
-            out[y:y+2, x:x+2] = color
+    g = normalize(bayer)
+    rgb[..., :] = g[..., None]
 
-    return out * 0.3 + img * 0.7
+    for y in range(2):
+        for x in range(2):
+            c = pattern[y, x]
+
+            # Map LibRaw CFA → RGB index
+            if c == 0:      # R
+                ch = 0
+            elif c == 2:    # B
+                ch = 2
+            else:           # G1 or G2
+                ch = 1
+
+            rgb[y::2, x::2, :] *= 0.3
+            rgb[y::2, x::2, ch] = 1.0
+
+    return rgb
+
 
 def dual_gain_view(bayer):
     low = np.clip(bayer, 0, np.percentile(bayer, 95))

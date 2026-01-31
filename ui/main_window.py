@@ -54,6 +54,9 @@ class MainWindow(QMainWindow):
         controls.addWidget(QLabel("Gamma"))
         controls.addWidget(self.gamma_slider)
         controls.addWidget(self.bayer_cb)
+        self.bayer_cb.setToolTip(
+            "Bayer overlay is only available in RAW stages (before demosaicing)"
+        )
         controls.addWidget(self.dual_cb)
         controls.addWidget(self.save_btn)
         controls.addWidget(self.stage_label)
@@ -72,7 +75,14 @@ class MainWindow(QMainWindow):
         self.update_pipeline()
 
     def next_stage(self):
-        self.stage = (self.stage + 1) % 6
+        next_stage = (self.stage + 1) % 6
+
+        # Auto-disable Bayer overlay when leaving RAW domain
+        if next_stage >= 3 and self.show_bayer:
+            self.show_bayer = False
+            self.bayer_cb.setChecked(False)
+
+        self.stage = next_stage
         self.update_pipeline()
 
     def toggle_bayer(self, s):
@@ -101,28 +111,38 @@ class MainWindow(QMainWindow):
 
         self.gamma_slider.setEnabled(self.stage >= 5)
 
+        # Bayer overlay only valid in RAW stages
+        bayer_allowed = self.stage < 3
+        self.bayer_cb.setEnabled(bayer_allowed)
+
+        if not bayer_allowed:
+            self.bayer_cb.setChecked(False)
+            self.show_bayer = False
+
         # --- RAW DOMAIN ---
         bayer = self.ctx.bayer.astype(float)
 
         if self.stage >= 1:
             bayer = subtract_black(bayer, self.ctx.black, self.ctx.pattern)
 
-        # WHITE BALANCE IN RAW DOMAIN
         if self.stage >= 2:
             bayer = apply_wb(bayer, self.ctx.wb, self.ctx.pattern)
 
         if self.show_dual_gain:
             bayer = dual_gain_view(bayer)
 
-        if self.stage >= 3:
-            rgb = demosaic(self.ctx, bayer, self.demosaic_mode)
+        # Bayer overlay (RAW domain visualization)
+        if self.show_bayer and self.stage < 3:
+            rgb = draw_bayer_overlay_raw(bayer, self.ctx.pattern)
 
+        elif self.stage >= 3:
+            rgb = demosaic(self.ctx, bayer, self.demosaic_mode)
             rgb = np.clip(rgb, 0.0, None)
 
         else:
             rgb = normalize(bayer)
 
-        # --- NORMALIZATION (GLOBAL) ---
+        # --- NORMALIZATION ---
         if self.stage >= 4:
             rgb = normalize_exposure(rgb)
 
@@ -134,8 +154,10 @@ class MainWindow(QMainWindow):
         # --- DISPLAY NORMALIZATION ---
         rgb = normalize_exposure(rgb)
 
-        if self.show_bayer and rgb.ndim == 3:
-            rgb = draw_bayer_grid(rgb, self.ctx.pattern)
+        # --- FINAL SAFETY ---
+        rgb = np.nan_to_num(rgb, nan=0.0, posinf=0.0, neginf=0.0)
+        rgb = np.clip(rgb, 0.0, 1.0)
+        rgb = np.ascontiguousarray(rgb, dtype=np.float32)
 
         self.image = rgb.copy()
         self.view.setImage(to_qimage(self.image))
